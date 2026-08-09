@@ -99,31 +99,34 @@ TPC-H at scale factor 1, available in every Snowflake account at `SNOWFLAKE_SAMP
 ## Project structure
 
 ```
-tpch_dbt/
-├── models/
-│   ├── staging/
-│   │   ├── _tpch__sources.yml        # raw source declarations
-│   │   ├── _tpch__models.yml         # staging tests + docs
-│   │   ├── stg_tpch__customers.sql
-│   │   ├── stg_tpch__orders.sql
-│   │   ├── stg_tpch__lineitems.sql
-│   │   ├── stg_tpch__parts.sql
-│   │   ├── stg_tpch__suppliers.sql
-│   │   ├── stg_tpch__nations.sql
-│   │   └── stg_tpch__regions.sql
-│   └── marts/
-│       ├── _marts__models.yml        # mart tests + docs
-│       ├── dim_customers.sql
-│       ├── dim_suppliers.sql
-│       ├── dim_parts.sql
-│       ├── fct_line_items.sql
-│       └── mart_revenue_by_segment.sql
-├── dbt_project.yml
+tpch-dbt-project/                     # repo root
+├── .venv/                            # uv virtual environment (gitignored)
 ├── .gitignore
-└── README.md
+├── README.md
+└── tpch_dbt/                         # dbt project
+    ├── models/
+    │   ├── staging/
+    │   │   ├── _tpch__sources.yml     # raw source declarations
+    │   │   ├── _tpch__models.yml      # staging tests + docs
+    │   │   ├── stg_tpch__customers.sql
+    │   │   ├── stg_tpch__orders.sql
+    │   │   ├── stg_tpch__lineitems.sql
+    │   │   ├── stg_tpch__parts.sql
+    │   │   ├── stg_tpch__suppliers.sql
+    │   │   ├── stg_tpch__nations.sql
+    │   │   └── stg_tpch__regions.sql
+    │   └── marts/
+    │       ├── _marts__models.yml     # mart tests + docs
+    │       ├── dim_customers.sql
+    │       ├── dim_suppliers.sql
+    │       ├── dim_parts.sql
+    │       ├── fct_line_items.sql
+    │       └── mart_revenue_by_segment.sql
+    ├── analyses/ · macros/ · seeds/ · snapshots/ · tests/   # dbt scaffolding
+    └── dbt_project.yml
 ```
 
-> `profiles.yml` is **not** in the repo — it lives at `~/.dbt/profiles.yml` because it references connection secrets. See setup below.
+> Two files are intentionally **not** committed: `.venv/` (the virtual environment, recreated with `uv`) and `profiles.yml` (lives at `~/.dbt/profiles.yml` because it holds connection secrets). Both are covered by `.gitignore`. Run `dbt` commands from inside `tpch_dbt/`.
 
 ---
 
