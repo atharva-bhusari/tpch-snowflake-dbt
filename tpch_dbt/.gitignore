@@ -1,0 +1,17 @@
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# python / uv
+.venv/
+__pycache__/
+*.pyc
+
+# secrets — NEVER commit
+profiles.yml
+*.p8
+*.pem
+rsa_key*
+.env

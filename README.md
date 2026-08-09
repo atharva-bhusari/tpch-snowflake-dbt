@@ -1,0 +1,223 @@
+# TPC-H Analytics Warehouse — Snowflake + dbt
+
+A dimensional data warehouse built on **Snowflake** and **dbt**, transforming the raw TPC-H benchmark dataset into a clean, tested, documented star schema ready for analytics.
+
+This project takes seven normalized source tables and models them into staging views and a dimensional mart layer — the standard ELT pattern used in production analytics engineering. Every model is version-controlled, every transformation is a `SELECT`, and the warehouse is reproducible from a single `dbt build`.
+
+---
+
+## Why this project
+
+TPC-H models a wholesale supplier's business — customers place orders, orders contain line items, line items reference parts and suppliers, and everyone belongs to a nation and region. It's normalized for transactional integrity, which makes it *bad* for analytics: answering "revenue by region and market segment" means joining five tables every time.
+
+The job here is to reshape that normalized source into an analytics-friendly **star schema** — conformed dimensions plus a line-item fact table — so business questions become simple, fast aggregations instead of multi-table joins.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph src["SNOWFLAKE_SAMPLE_DATA.TPCH_SF1 (raw, read-only)"]
+        C[customer]
+        O[orders]
+        L[lineitem]
+        P[part]
+        S[supplier]
+        N[nation]
+        R[region]
+    end
+
+    subgraph stg["staging (views)"]
+        SC[stg_tpch__customers]
+        SO[stg_tpch__orders]
+        SL[stg_tpch__lineitems]
+        SP[stg_tpch__parts]
+        SS[stg_tpch__suppliers]
+        SN[stg_tpch__nations]
+        SR[stg_tpch__regions]
+    end
+
+    subgraph marts["marts (tables — star schema)"]
+        DC[dim_customers]
+        DS[dim_suppliers]
+        DP[dim_parts]
+        FL[fct_line_items]
+        MB[mart_revenue_by_segment]
+    end
+
+    C --> SC --> DC
+    N --> SN --> DC
+    R --> SR --> DC
+    S --> SS --> DS
+    N --> SN --> DS
+    R --> SR --> DS
+    P --> SP --> DP
+    L --> SL --> FL
+    O --> SO --> FL
+    FL --> MB
+    DC --> MB
+```
+
+**Layers:**
+
+- **Sources** — the raw TPC-H tables, declared once in `_tpch__sources.yml`. dbt tracks lineage from these forward, so it always knows which models depend on which raw table.
+- **Staging** (`stg_*`, materialized as **views**) — one model per source table, 1:1. Renames cryptic columns (`c_acctbal` → `account_balance`), casts types, light cleanup. No joins. Views cost no storage and are always fresh.
+- **Marts** (materialized as **tables**) — the dimensional layer. Conformed dimensions (`dim_customers`, `dim_suppliers`, `dim_parts`), a `fct_line_items` fact table at line-item grain, and a business-question mart. Materialized as tables because they're the layer analysts and BI tools query repeatedly.
+
+---
+
+## Tech stack
+
+| Layer | Tool |
+|---|---|
+| Warehouse | Snowflake (Standard edition, X-Small warehouse) |
+| Transformation | dbt Core + `dbt-snowflake` adapter |
+| Language | SQL (Jinja-templated) |
+| Environment | Python 3.12, managed with [uv](https://github.com/astral-sh/uv) |
+| Auth | Snowflake key-pair authentication (RSA) |
+| Source data | TPC-H SF1 (Snowflake sample data, read-only) |
+
+---
+
+## Data source
+
+TPC-H at scale factor 1, available in every Snowflake account at `SNOWFLAKE_SAMPLE_DATA.TPCH_SF1`. It's read-only shared data, so there is **nothing to load** — dbt reads it directly. Fixed cardinalities at SF1:
+
+| Table | Rows |
+|---|---|
+| region | 5 |
+| nation | 25 |
+| supplier | 10,000 |
+| customer | 150,000 |
+| part | 200,000 |
+| orders | 1,500,000 |
+| lineitem | ~6,000,000 |
+
+---
+
+## Project structure
+
+```
+tpch_dbt/
+├── models/
+│   ├── staging/
+│   │   ├── _tpch__sources.yml        # raw source declarations
+│   │   ├── _tpch__models.yml         # staging tests + docs
+│   │   ├── stg_tpch__customers.sql
+│   │   ├── stg_tpch__orders.sql
+│   │   ├── stg_tpch__lineitems.sql
+│   │   ├── stg_tpch__parts.sql
+│   │   ├── stg_tpch__suppliers.sql
+│   │   ├── stg_tpch__nations.sql
+│   │   └── stg_tpch__regions.sql
+│   └── marts/
+│       ├── _marts__models.yml        # mart tests + docs
+│       ├── dim_customers.sql
+│       ├── dim_suppliers.sql
+│       ├── dim_parts.sql
+│       ├── fct_line_items.sql
+│       └── mart_revenue_by_segment.sql
+├── dbt_project.yml
+├── .gitignore
+└── README.md
+```
+
+> `profiles.yml` is **not** in the repo — it lives at `~/.dbt/profiles.yml` because it references connection secrets. See setup below.
+
+---
+
+## Setup and reproduction
+
+### Prerequisites
+
+- A Snowflake account ([free 30-day trial](https://signup.snowflake.com/), no credit card)
+- [uv](https://github.com/astral-sh/uv) installed
+- OpenSSL (bundled with Git for Windows; native on macOS/Linux)
+
+### 1. Install dbt
+
+```bash
+uv python install 3.12
+uv venv --python 3.12
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+uv pip install dbt-snowflake
+dbt --version
+```
+
+### 2. Set up key-pair authentication
+
+Snowflake is deprecating single-factor password logins, so this project uses RSA key-pair auth (the correct approach for any automated dbt run).
+
+Generate a key pair **outside the repo directory**:
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+```
+
+Register the public key on your Snowflake user (in a Snowsight worksheet):
+
+```sql
+ALTER USER <your_username> SET RSA_PUBLIC_KEY='<body of rsa_key.pub, no BEGIN/END lines>';
+```
+
+### 3. Create the target objects in Snowflake
+
+```sql
+USE ROLE SYSADMIN;
+
+CREATE WAREHOUSE IF NOT EXISTS COMPUTE_WH
+  WAREHOUSE_SIZE = 'XSMALL' AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE;
+
+CREATE DATABASE IF NOT EXISTS TPCH_DBT;
+CREATE SCHEMA IF NOT EXISTS TPCH_DBT.DBT_DEV;
+```
+
+### 4. Configure the dbt profile
+
+Create `~/.dbt/profiles.yml` (use the hyphenated `ORG-ACCOUNT` identifier, never the dotted form):
+
+```yaml
+tpch_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "<ORGNAME-ACCOUNT_NAME>"
+      user: "<your_username>"
+      private_key_path: "<full/path/to/rsa_key.p8>"
+      role: SYSADMIN
+      warehouse: COMPUTE_WH
+      database: TPCH_DBT
+      schema: DBT_DEV
+      threads: 4
+```
+
+### 5. Verify and build
+
+```bash
+dbt debug          # expect: All checks passed!
+dbt build          # runs models + tests in dependency order
+dbt docs generate  # build the docs site
+dbt docs serve     # explore lineage + docs in the browser
+```
+
+---
+
+## Data quality
+
+Models are tested with dbt's built-in tests — `unique` and `not_null` on primary keys, and `relationships` tests enforcing referential integrity between fact and dimension tables (e.g. every `customer_key` in `fct_line_items` exists in `dim_customers`). Tests run as part of `dbt build` and gate the pipeline: if an assumption breaks, the build fails.
+
+---
+
+## Build status
+
+> Active build — remove this section when complete.
+
+- [x] Snowflake account + key-pair auth + target objects
+- [x] dbt project scaffolded, `dbt debug` passing
+- [ ] Staging layer (7 models)
+- [ ] Marts layer (star schema)
+- [ ] Tests + documentation
+- [ ] Published `dbt docs`
