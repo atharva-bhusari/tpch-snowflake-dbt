@@ -96,6 +96,25 @@ TPC-H at scale factor 1, available in every Snowflake account at `SNOWFLAKE_SAMP
 
 ---
 
+## Models
+
+Twelve models build in dependency order: seven staging views, then the star schema. Row counts below are from an actual `dbt run` against SF1 — they double as a correctness check. `dim_customers` landing at exactly 150,000 confirms the nation/region joins neither dropped nor duplicated rows, and `fct_line_items` at 6,001,215 confirms every line item matched a valid order.
+
+| Model | Layer | Materialization | Rows |
+|---|---|---|---|
+| `stg_tpch__*` (7 models) | staging | view | mirror of source |
+| `dim_customers` | mart | table | 150,000 |
+| `dim_suppliers` | mart | table | 10,000 |
+| `dim_parts` | mart | table | 200,000 |
+| `fct_line_items` | mart | table | 6,001,215 |
+| `mart_revenue_by_segment` | mart | table | 25 |
+
+`mart_revenue_by_segment` returns 25 rows = 5 regions × 5 market segments. Because the fact is at line-item grain, order counts in the mart use `count(distinct order_key)` — the same order spans multiple line-item rows, so a plain count would overcount.
+
+The full run builds all 12 models in ~11 seconds on an X-Small warehouse, including the ~6M-row fact table in under 6 seconds — a practical demonstration of Snowflake's separation of compute and storage.
+
+---
+
 ## Project structure
 
 ```
@@ -106,8 +125,8 @@ tpch-dbt-project/                     # repo root
 └── tpch_dbt/                         # dbt project
     ├── models/
     │   ├── staging/
-    │   │   ├── _tpch__sources.yml     # raw source declarations
-    │   │   ├── _tpch__models.yml      # staging tests + docs
+    │   │   ├── _tpch__sources.yml       # raw source declarations
+    │   │   ├── _stg_tpch__models.yml     # staging tests + docs
     │   │   ├── stg_tpch__customers.sql
     │   │   ├── stg_tpch__orders.sql
     │   │   ├── stg_tpch__lineitems.sql
@@ -220,7 +239,7 @@ Models are tested with dbt's built-in tests — `unique` and `not_null` on prima
 
 - [x] Snowflake account + key-pair auth + target objects
 - [x] dbt project scaffolded, `dbt debug` passing
-- [ ] Staging layer (7 models)
-- [ ] Marts layer (star schema)
+- [x] Staging layer (7 models)
+- [x] Marts layer (star schema — 3 dims, 1 fact, 1 business mart)
 - [ ] Tests + documentation
 - [ ] Published `dbt docs`
