@@ -261,19 +261,174 @@ Models are tested with dbt's built-in tests — `unique` and `not_null` on prima
 
 ---
 
-## Build status
+## Model reference
 
-> Active build — remove this section when complete.
+Every model is documented in dbt (`_stg_tpch__models.yml`, `_marts__models.yml`) and browsable in the generated docs site with lineage. This is the same reference in table form.
 
-- [x] Snowflake account + key-pair auth + target objects
-- [x] dbt project scaffolded, `dbt debug` passing
-- [x] Staging layer (7 models)
-- [x] Marts layer (star schema — 3 dims, 1 fact, 1 business mart)
-- [x] Tests + documentation (43 build steps passing: 12 models, 31 tests)
-- [ ] Lineage screenshot + repo pushed public
+### Staging layer
 
----
+Seven views, one per source table, 1:1 with the raw data. Their only job is to rename TPC-H's cryptic columns (`c_acctbal` → `account_balance`) and standardize types — no joins, no logic.
 
-## License
+<details>
+<summary><b>Expand staging column reference (7 models)</b></summary>
 
-MIT
+**`stg_tpch__customers`**
+
+| Column | Description |
+|---|---|
+| customer_key | Primary key of a customer |
+| customer_name | Customer name |
+| address | Street address |
+| nation_key | FK to the customer's nation |
+| phone_number | Contact phone |
+| account_balance | Account balance |
+| market_segment | Market segment (Building, Household, Furniture, Machinery, Automobile) |
+
+**`stg_tpch__orders`**
+
+| Column | Description |
+|---|---|
+| order_key | Primary key of an order |
+| customer_key | FK to the ordering customer |
+| order_status | Order status code |
+| total_price | Order total price |
+| order_date | Date the order was placed |
+| order_priority | Priority label |
+| clerk | Clerk who handled the order |
+| ship_priority | Shipping priority |
+
+**`stg_tpch__lineitems`**
+
+| Column | Description |
+|---|---|
+| order_key | FK to the parent order |
+| part_key | FK to the part sold |
+| supplier_key | FK to the supplying supplier |
+| line_number | Line number within the order |
+| quantity | Units on the line |
+| extended_price | Gross price for the line (before discount) |
+| discount | Discount rate (0–1) |
+| tax | Tax rate (0–1) |
+| return_flag | Return status code (A / N / R) |
+| line_status | Line status code |
+| ship_date | Date shipped |
+| commit_date | Committed delivery date |
+| receipt_date | Date received |
+| ship_mode | Shipping method |
+
+**`stg_tpch__parts`**
+
+| Column | Description |
+|---|---|
+| part_key | Primary key of a part |
+| part_name | Part name |
+| manufacturer | Manufacturer |
+| brand | Brand |
+| part_type | Part type |
+| part_size | Size |
+| container | Container type |
+| retail_price | Retail price |
+
+**`stg_tpch__suppliers`**
+
+| Column | Description |
+|---|---|
+| supplier_key | Primary key of a supplier |
+| supplier_name | Supplier name |
+| address | Street address |
+| nation_key | FK to the supplier's nation |
+| phone_number | Contact phone |
+| account_balance | Account balance |
+
+**`stg_tpch__nations`**
+
+| Column | Description |
+|---|---|
+| nation_key | Primary key of a nation |
+| nation_name | Nation name |
+| region_key | FK to the nation's region |
+
+**`stg_tpch__regions`**
+
+| Column | Description |
+|---|---|
+| region_key | Primary key of a region |
+| region_name | Region name |
+
+</details>
+
+### Marts layer
+
+The star schema — three conformed dimensions, one fact table at line-item grain, and one business-question mart. Materialized as tables.
+
+**`dim_customers`** — customer dimension, denormalized with geography *(150,000 rows)*
+
+| Column | Description |
+|---|---|
+| customer_key | **Primary key.** `unique`, `not_null` tested |
+| customer_name | Customer name |
+| address | Street address |
+| phone_number | Contact phone |
+| account_balance | Account balance |
+| market_segment | Market segment |
+| nation_name | Nation name, joined in from `stg_tpch__nations` |
+| region_name | Region name, joined in from `stg_tpch__regions` |
+
+**`dim_suppliers`** — supplier dimension, denormalized with geography *(10,000 rows)*
+
+| Column | Description |
+|---|---|
+| supplier_key | **Primary key.** `unique`, `not_null` tested |
+| supplier_name | Supplier name |
+| address | Street address |
+| phone_number | Contact phone |
+| account_balance | Account balance |
+| nation_name | Nation name, joined in |
+| region_name | Region name, joined in |
+
+**`dim_parts`** — part dimension *(200,000 rows)*
+
+| Column | Description |
+|---|---|
+| part_key | **Primary key.** `unique`, `not_null` tested |
+| part_name | Part name |
+| manufacturer | Manufacturer |
+| brand | Brand |
+| part_type | Part type |
+| part_size | Size |
+| container | Container type |
+| retail_price | Retail price |
+
+**`fct_line_items`** — fact table, grain = one row per order line *(6,001,215 rows)*
+
+| Column | Description |
+|---|---|
+| line_item_key | **Surrogate key**, hash of `order_key + line_number`. `unique`, `not_null` tested |
+| order_key | FK to the order |
+| part_key | FK to `dim_parts`. `relationships` tested |
+| supplier_key | FK to `dim_suppliers`. `relationships` tested |
+| customer_key | FK to `dim_customers`. `relationships` tested |
+| line_number | Line number within the order |
+| order_date | Date the order was placed |
+| order_status | Order status code |
+| ship_date | Date shipped |
+| ship_mode | Shipping method |
+| return_flag | Return status (A / N / R). `accepted_values` tested |
+| quantity | Units on the line |
+| gross_item_revenue | `extended_price` — line revenue before discount |
+| discount | Discount rate (0–1) |
+| discount_amount | `extended_price × discount` |
+| net_revenue | `extended_price × (1 − discount)` — the primary revenue measure |
+| tax | Tax rate (0–1) |
+| net_revenue_with_tax | `extended_price × (1 − discount) × (1 + tax)` |
+
+**`mart_revenue_by_segment`** — net revenue rolled up by region and segment *(25 rows)*
+
+| Column | Description |
+|---|---|
+| region_name | Customer region |
+| market_segment | Customer market segment |
+| order_count | Distinct orders (`count(distinct order_key)` — the fact is at line grain, so distinct avoids overcounting) |
+| total_quantity | Total units |
+| net_revenue | Sum of `net_revenue` |
+| avg_line_revenue | Average `net_revenue` per line |
