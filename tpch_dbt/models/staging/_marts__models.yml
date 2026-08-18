@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: "Customer dimension, denormalized with nation and region names."
+    columns:
+      - name: customer_key
+        description: "Primary key of a customer (natural key from source)."
+        data_tests: [unique, not_null]
+
+  - name: dim_suppliers
+    description: "Supplier dimension, denormalized with nation and region names."
+    columns:
+      - name: supplier_key
+        description: "Primary key of a supplier."
+        data_tests: [unique, not_null]
+
+  - name: dim_parts
+    description: "Part dimension."
+    columns:
+      - name: part_key
+        description: "Primary key of a part."
+        data_tests: [unique, not_null]
+
+  - name: fct_line_items
+    description: "Fact table at line-item grain. One row per order line, with FKs to all dimensions and revenue measures."
+    columns:
+      - name: line_item_key
+        description: "Surrogate key (hash of order_key + line_number)."
+        data_tests: [unique, not_null]
+      - name: customer_key
+        description: "FK to dim_customers."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_key
+      - name: part_key
+        description: "FK to dim_parts."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parts')
+                field: part_key
+      - name: supplier_key
+        description: "FK to dim_suppliers."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_suppliers')
+                field: supplier_key
+      - name: return_flag
+        description: "Line return status: A=accepted, N=none, R=returned."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['A', 'N', 'R']
+
+  - name: mart_revenue_by_segment
+    description: "Net revenue and order counts rolled up by region and market segment."
+    columns:
+      - name: region_name
+        data_tests: [not_null]
+      - name: market_segment
+        data_tests: [not_null]

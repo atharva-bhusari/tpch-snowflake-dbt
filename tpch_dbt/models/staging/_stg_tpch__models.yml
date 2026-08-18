@@ -1,0 +1,51 @@
+version: 2
+
+models:
+  - name: stg_tpch__customers
+    description: "One row per customer, columns renamed and typed from raw TPC-H."
+    columns:
+      - name: customer_key
+        description: "Primary key of a customer."
+        data_tests: [unique, not_null]
+
+  - name: stg_tpch__orders
+    description: "One row per order."
+    columns:
+      - name: order_key
+        description: "Primary key of an order."
+        data_tests: [unique, not_null]
+
+  - name: stg_tpch__lineitems
+    description: "One row per line item on an order (grain: order_key + line_number)."
+    columns:
+      - name: order_key
+        description: "Foreign key to the parent order."
+        data_tests: [not_null]
+
+  - name: stg_tpch__parts
+    description: "One row per part."
+    columns:
+      - name: part_key
+        description: "Primary key of a part."
+        data_tests: [unique, not_null]
+
+  - name: stg_tpch__suppliers
+    description: "One row per supplier."
+    columns:
+      - name: supplier_key
+        description: "Primary key of a supplier."
+        data_tests: [unique, not_null]
+
+  - name: stg_tpch__nations
+    description: "One row per nation."
+    columns:
+      - name: nation_key
+        description: "Primary key of a nation."
+        data_tests: [unique, not_null]
+
+  - name: stg_tpch__regions
+    description: "One row per region."
+    columns:
+      - name: region_key
+        description: "Primary key of a region."
+        data_tests: [unique, not_null]
